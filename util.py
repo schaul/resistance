@@ -22,7 +22,7 @@ class Variable(object):
             value = 100.0 * float(self.total) / float(self.samples)
             if value == 100.0:
                 return "100.0%"
-            return "{:5.2f}%".format(value)
+            return "{0:5.2f}%".format(value)
         else:
             return "   N/A"
 
