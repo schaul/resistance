@@ -2,6 +2,7 @@ import logging
 from twisted.words.protocols import irc
 from twisted.internet import reactor, protocol
 
+from competition import getCompetitors
 from player import Player
 from game import State
 
@@ -70,10 +71,10 @@ class ResistanceClient(object):
         bot.game.players = participants
 
         # SPIES 1-Deceiver.
-        saboteurs = []
+        saboteurs = set()
         if spies:
             for s in spies.split(' ')[1:]:
-                saboteurs.append(self.makePlayer(s.rstrip(',')))
+                saboteurs.add(self.makePlayer(s.rstrip(',')))
             bot.game.spies = saboteurs
 
         bot.onGameRevealed(participants, saboteurs)
@@ -102,6 +103,7 @@ class ResistanceClient(object):
         # VOTE 1-Random, 2-Hippie, 3-Paranoid.
         bot = self.getBot()
         bot.game.team = self.makeTeam(team)
+        bot.onTeamSelected(bot.game.leader, bot.game.team)
         result = bot.vote(bot.game.team)
         reply = {True: "Yes", False: "No"}
         self.reply('VOTED %s.' % (reply[result]))
@@ -144,7 +146,7 @@ class ResistanceClient(object):
             self.reply("QUERY %s" % (players))
 
     def makeTeam(self, team):
-        return [self.makePlayer(t.strip('., ')) for t in team.split(' ')[1:]]
+        return set([self.makePlayer(t.strip('., ')) for t in team.split(' ')[1:]])
 
     def makePlayer(self, identifier):
         index, name = identifier.split('-')
@@ -180,9 +182,6 @@ class ResistanceClient(object):
 
 class ResistanceProtocol(irc.IRCClient):
            
-    def __init__(self):
-        self.client = None
-
     @property
     def nickname(self):
         return self.factory.nickname
@@ -191,6 +190,7 @@ class ResistanceProtocol(irc.IRCClient):
         print "CONNECTED %s" % (self.nickname)
         self.client = ResistanceClient(self, self.factory.constructor)
         self.join('#resistance')
+        self.msg('aigamedev', 'BOT')
 
     def joined(self, channel):
         pass
@@ -204,6 +204,11 @@ class ResistanceProtocol(irc.IRCClient):
     
     def userQuit(self, user, reason):
         self.client.disconnect(user)
+
+    def irc_INVITE(self, user, args):
+        channel = args[1]
+        if '#game-' in channel:
+            self.join(channel) 
 
 
 class ResistanceFactory(protocol.ClientFactory):
@@ -231,10 +236,11 @@ if __name__ == '__main__':
         print 'USAGE: client.py file.BotName [...]'
         sys.exit(-1)
 
-    for path in sys.argv[1:]:
-        filename, classname = path.split('.')
-        module = importlib.import_module(filename)
-        cls = getattr(module, classname)
-        reactor.connectTCP("localhost", 6667, ResistanceFactory(cls))
+    server = 'localhost'
+    if 'irc.' in sys.argv[1]:
+        server = sys.argv.pop(1)
+
+    for cls in getCompetitors(sys.argv[1:]):
+        reactor.connectTCP(server, 6667, ResistanceFactory(cls))
 
     reactor.run()
